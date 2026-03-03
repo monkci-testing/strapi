@@ -1,9 +1,9 @@
 import { errors } from '@strapi/utils';
 import type { Data } from '@strapi/types';
 
-export type ApiToken = {
-  accessKey: string;
-  encryptedKey: string;
+export type ApiTokenBase = {
+  accessKey?: string;
+  encryptedKey?: string;
   createdAt: string;
   description: string;
   expiresAt: string;
@@ -11,19 +11,26 @@ export type ApiToken = {
   lastUsedAt: string | null;
   lifespan: string | number | null;
   name: string;
-  permissions: string[];
-  type: 'custom' | 'full-access' | 'read-only';
   updatedAt: string;
 };
 
-export interface ApiTokenBody extends Pick<ApiToken, 'description' | 'name'> {
-  lifespan?: ApiToken['lifespan'] | null;
-  permissions?: ApiToken['permissions'] | null;
-  type: ApiToken['type'] | undefined;
-}
+export type ContentApiApiToken = ApiTokenBase & {
+  kind: 'content-api';
+  type: 'custom' | 'full-access' | 'read-only';
+  permissions: string[];
+};
+
+export type ApiToken = ContentApiApiToken;
+
+export type ContentApiApiTokenBody = Pick<ContentApiApiToken, 'name' | 'description' | 'type'> & {
+  lifespan?: ContentApiApiToken['lifespan'] | null;
+  permissions?: ContentApiApiToken['permissions'] | null;
+};
+
+export type ApiTokenBody = ContentApiApiTokenBody;
 
 /**
- * POST /api-tokens - Create an api token
+ * POST /api-tokens - Create a content-api token
  */
 export declare namespace Create {
   export interface Request {
@@ -32,13 +39,13 @@ export declare namespace Create {
   }
 
   export interface Response {
-    data: ApiToken;
+    data: ContentApiApiToken;
     error?: errors.ApplicationError | errors.YupValidationError;
   }
 }
 
 /**
- * GET /api-tokens - List api tokens
+ * GET /api-tokens - List content-api tokens
  */
 export declare namespace List {
   export interface Request {
@@ -47,13 +54,13 @@ export declare namespace List {
   }
 
   export interface Response {
-    data: ApiToken[];
+    data: ContentApiApiToken[];
     error?: errors.ApplicationError;
   }
 }
 
 /**
- * DELETE /api-tokens/:id - Delete an API token
+ * DELETE /api-tokens/:id - Delete a content-api token
  */
 export declare namespace Revoke {
   export interface Request {
@@ -66,13 +73,13 @@ export declare namespace Revoke {
   }
 
   export interface Response {
-    data: ApiToken;
+    data: ContentApiApiToken;
     error?: errors.ApplicationError;
   }
 }
 
 /**
- * GET /api-tokens/:id - Get an API token
+ * GET /api-tokens/:id - Get a content-api token
  */
 export declare namespace Get {
   export interface Request {
@@ -85,17 +92,17 @@ export declare namespace Get {
   }
 
   export interface Response {
-    data: ApiToken;
+    data: ContentApiApiToken;
     error?: errors.ApplicationError;
   }
 }
 
 /**
- * POST /api-tokens/:id - Update an API token
+ * PUT /api-tokens/:id - Update a content-api token
  */
 export declare namespace Update {
   export interface Request {
-    body: ApiTokenBody;
+    body: Partial<ApiTokenBody>;
     query: {};
   }
 
@@ -104,7 +111,7 @@ export declare namespace Update {
   }
 
   export interface Response {
-    data: ApiToken;
+    data: ContentApiApiToken;
     error?: errors.ApplicationError | errors.YupValidationError;
   }
 }

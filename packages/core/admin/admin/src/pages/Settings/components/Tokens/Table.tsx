@@ -14,7 +14,8 @@ import { useIntl } from 'react-intl';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { styled } from 'styled-components';
 
-import { ApiToken } from '../../../../../../shared/contracts/api-token';
+import { AdminApiToken } from '../../../../../../shared/contracts/admin-token';
+import { ContentApiApiToken } from '../../../../../../shared/contracts/api-token';
 import { SanitizedTransferToken } from '../../../../../../shared/contracts/transfer';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { tours } from '../../../../components/GuidedTour/Tours';
@@ -23,22 +24,32 @@ import { Table as TableImpl } from '../../../../components/Table';
 import { useTracking } from '../../../../features/Tracking';
 import { useQueryParams } from '../../../../hooks/useQueryParams';
 
+import type { AdminUser } from '../../../../../../shared/contracts/shared';
 import type { Data } from '@strapi/types';
+
+type AnyApiToken = ContentApiApiToken | AdminApiToken;
+
+const formatAdminUserName = (owner: AdminUser): string => {
+  const full = [owner.firstname, owner.lastname].filter(Boolean).join(' ');
+  return full || owner.username || owner.email || '';
+};
 
 /* -------------------------------------------------------------------------------------------------
  * Table
  * -----------------------------------------------------------------------------------------------*/
 
 interface TableProps
-  extends Pick<TableImpl.Props<SanitizedTransferToken | ApiToken>, 'headers' | 'isLoading'> {
+  extends Pick<TableImpl.Props<SanitizedTransferToken | AnyApiToken>, 'headers' | 'isLoading'> {
   onConfirmDelete: (id: Data.ID) => void;
   permissions: {
     canRead: boolean;
     canDelete: boolean;
     canUpdate: boolean;
   };
-  tokens: SanitizedTransferToken[] | ApiToken[];
+  tokens: SanitizedTransferToken[] | AnyApiToken[];
   tokenType: 'api-token' | 'transfer-token';
+  showKind?: boolean;
+  showOwner?: boolean;
 }
 
 const Table = ({
@@ -48,6 +59,8 @@ const Table = ({
   tokens = [],
   onConfirmDelete,
   tokenType,
+  showKind = false,
+  showOwner = false,
 }: TableProps) => {
   const [{ query }] = useQueryParams<{ sort?: string }>();
   const { formatMessage, locale } = useIntl();
@@ -94,6 +107,25 @@ const Table = ({
                     {token.name}
                   </Typography>
                 </TableImpl.Cell>
+                {showKind === true &&
+                  (() => {
+                    const apiToken = token as AnyApiToken;
+                    return (
+                      <TableImpl.Cell>
+                        <Typography textColor="neutral800">
+                          {apiToken.kind === 'admin'
+                            ? formatMessage({
+                                id: 'Settings.apiTokens.kind.admin',
+                                defaultMessage: 'Admin',
+                              })
+                            : formatMessage({
+                                id: 'Settings.apiTokens.kind.content-api',
+                                defaultMessage: 'Content API',
+                              })}
+                        </Typography>
+                      </TableImpl.Cell>
+                    );
+                  })()}
                 <TableImpl.Cell maxWidth="25rem">
                   <Typography textColor="neutral800" ellipsis>
                     {token.description}
@@ -124,6 +156,22 @@ const Table = ({
                     </Typography>
                   )}
                 </TableImpl.Cell>
+                {showOwner === true &&
+                  (() => {
+                    const apiToken = token as AnyApiToken;
+                    const owner = apiToken.kind === 'admin' ? apiToken.adminUserOwner : undefined;
+                    const ownerName =
+                      owner !== undefined && owner !== null && typeof owner === 'object'
+                        ? formatAdminUserName(owner)
+                        : '';
+                    return (
+                      <TableImpl.Cell maxWidth="20rem">
+                        <Typography textColor="neutral800" ellipsis>
+                          {ownerName}
+                        </Typography>
+                      </TableImpl.Cell>
+                    );
+                  })()}
                 {canUpdate || canRead || canDelete ? (
                   <TableImpl.Cell>
                     <Flex justifyContent="end">

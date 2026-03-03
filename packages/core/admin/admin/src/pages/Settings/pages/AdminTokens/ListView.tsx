@@ -1,13 +1,12 @@
 import * as React from 'react';
 
-import { Box, EmptyStateLayout, LinkButton } from '@strapi/design-system';
+import { EmptyStateLayout, LinkButton } from '@strapi/design-system';
 import { Plus } from '@strapi/icons';
 import { EmptyDocuments } from '@strapi/icons/symbols';
 import * as qs from 'qs';
 import { useIntl } from 'react-intl';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { tours } from '../../../../components/GuidedTour/Tours';
 import { Layouts } from '../../../../components/Layouts/Layout';
 import { Page } from '../../../../components/PageHelpers';
 import { useTypedSelector } from '../../../../core/store/hooks';
@@ -16,7 +15,10 @@ import { useTracking } from '../../../../features/Tracking';
 import { useAPIErrorHandler } from '../../../../hooks/useAPIErrorHandler';
 import { useOnce } from '../../../../hooks/useOnce';
 import { useRBAC } from '../../../../hooks/useRBAC';
-import { useDeleteAPITokenMutation, useGetAPITokensQuery } from '../../../../services/apiTokens';
+import {
+  useDeleteAdminTokenMutation,
+  useGetAdminTokensQuery,
+} from '../../../../services/apiTokens';
 import { API_TOKEN_TYPE } from '../../components/Tokens/constants';
 import { Table } from '../../components/Tokens/Table';
 
@@ -26,7 +28,7 @@ const TABLE_HEADERS = [
   {
     name: 'name',
     label: {
-      id: 'Settings.apiTokens.ListView.headers.name',
+      id: 'Settings.adminTokens.ListView.headers.name',
       defaultMessage: 'Name',
     },
     sortable: true,
@@ -34,7 +36,7 @@ const TABLE_HEADERS = [
   {
     name: 'description',
     label: {
-      id: 'Settings.apiTokens.ListView.headers.description',
+      id: 'Settings.adminTokens.ListView.headers.description',
       defaultMessage: 'Description',
     },
     sortable: false,
@@ -42,7 +44,7 @@ const TABLE_HEADERS = [
   {
     name: 'createdAt',
     label: {
-      id: 'Settings.apiTokens.ListView.headers.createdAt',
+      id: 'Settings.adminTokens.ListView.headers.createdAt',
       defaultMessage: 'Created at',
     },
     sortable: false,
@@ -50,8 +52,16 @@ const TABLE_HEADERS = [
   {
     name: 'lastUsedAt',
     label: {
-      id: 'Settings.apiTokens.ListView.headers.lastUsedAt',
+      id: 'Settings.adminTokens.ListView.headers.lastUsedAt',
       defaultMessage: 'Last used',
+    },
+    sortable: false,
+  },
+  {
+    name: 'adminUserOwner',
+    label: {
+      id: 'Settings.adminTokens.ListView.headers.owner',
+      defaultMessage: 'Owner',
     },
     sortable: false,
   },
@@ -61,7 +71,7 @@ export const ListView = () => {
   const { formatMessage } = useIntl();
   const { toggleNotification } = useNotification();
   const permissions = useTypedSelector(
-    (state) => state.admin_app.permissions.settings?.['api-tokens']
+    (state) => state.admin_app.permissions.settings?.['admin-tokens']
   );
   const {
     allowedActions: { canRead, canCreate, canDelete, canUpdate },
@@ -86,7 +96,7 @@ export const ListView = () => {
     });
   });
 
-  const { data: apiTokens = [], isLoading, error } = useGetAPITokensQuery({ kind: 'content-api' });
+  const { data: adminTokens = [], isLoading, error } = useGetAdminTokensQuery();
 
   React.useEffect(() => {
     if (error) {
@@ -98,10 +108,10 @@ export const ListView = () => {
   }, [error, formatAPIError, toggleNotification]);
 
   React.useEffect(() => {
-    trackUsage('didAccessTokenList', { number: apiTokens.length, tokenType: API_TOKEN_TYPE });
-  }, [apiTokens, trackUsage]);
+    trackUsage('didAccessTokenList', { number: adminTokens.length, tokenType: API_TOKEN_TYPE });
+  }, [adminTokens, trackUsage]);
 
-  const [deleteToken] = useDeleteAPITokenMutation();
+  const [deleteToken] = useDeleteAdminTokenMutation();
 
   const handleDelete = async (id: Data.ID) => {
     try {
@@ -130,37 +140,31 @@ export const ListView = () => {
 
   return (
     <>
-      {apiTokens.length > 0 && (
-        <tours.apiTokens.Introduction>
-          {/* Invisible Anchor */}
-          <Box />
-        </tours.apiTokens.Introduction>
-      )}
       <Page.Title>
         {formatMessage(
           { id: 'Settings.PageTitle', defaultMessage: 'Settings - {name}' },
-          { name: 'API Tokens' }
+          { name: 'Admin Tokens' }
         )}
       </Page.Title>
       <Layouts.Header
-        title={formatMessage({ id: 'Settings.apiTokens.title', defaultMessage: 'API Tokens' })}
+        title={formatMessage({ id: 'Settings.adminTokens.title', defaultMessage: 'Admin Tokens' })}
         subtitle={formatMessage({
-          id: 'Settings.apiTokens.description',
-          defaultMessage: 'List of generated tokens to consume the API',
+          id: 'Settings.adminTokens.description',
+          defaultMessage: 'List of generated tokens to access the admin API',
         })}
         primaryAction={
           canCreate && (
             <LinkButton
               tag={Link}
-              data-testid="create-api-token-button"
+              data-testid="create-admin-token-button"
               startIcon={<Plus />}
               size="S"
               onClick={() => trackUsage('willAddTokenFromList', { tokenType: API_TOKEN_TYPE })}
-              to="/settings/api-tokens/create"
+              to="/settings/admin-tokens/create"
             >
               {formatMessage({
-                id: 'Settings.apiTokens.addNewToken',
-                defaultMessage: 'Add new API Token',
+                id: 'Settings.adminTokens.addNewToken',
+                defaultMessage: 'Add new Admin Token',
               })}
             </LinkButton>
           )
@@ -171,44 +175,45 @@ export const ListView = () => {
       ) : (
         <Page.Main aria-busy={isLoading}>
           <Layouts.Content>
-            {apiTokens.length > 0 && (
+            {adminTokens.length > 0 && (
               <Table
                 permissions={{ canRead, canDelete, canUpdate }}
                 headers={headers}
                 isLoading={isLoading}
                 onConfirmDelete={handleDelete}
-                tokens={apiTokens}
+                tokens={adminTokens}
                 tokenType={API_TOKEN_TYPE}
+                showOwner
               />
             )}
-            {canCreate && apiTokens.length === 0 ? (
+            {canCreate && adminTokens.length === 0 ? (
               <EmptyStateLayout
                 icon={<EmptyDocuments width="16rem" />}
                 content={formatMessage({
-                  id: 'Settings.apiTokens.addFirstToken',
-                  defaultMessage: 'Add your first API Token',
+                  id: 'Settings.adminTokens.addFirstToken',
+                  defaultMessage: 'Add your first Admin Token',
                 })}
                 action={
                   <LinkButton
                     tag={Link}
                     variant="secondary"
                     startIcon={<Plus />}
-                    to="/settings/api-tokens/create"
+                    to="/settings/admin-tokens/create"
                   >
                     {formatMessage({
-                      id: 'Settings.apiTokens.addNewToken',
-                      defaultMessage: 'Add new API Token',
+                      id: 'Settings.adminTokens.addNewToken',
+                      defaultMessage: 'Add new Admin Token',
                     })}
                   </LinkButton>
                 }
               />
             ) : null}
-            {!canCreate && apiTokens.length === 0 ? (
+            {!canCreate && adminTokens.length === 0 ? (
               <EmptyStateLayout
                 icon={<EmptyDocuments width="16rem" />}
                 content={formatMessage({
-                  id: 'Settings.apiTokens.emptyStateLayout',
-                  defaultMessage: 'You don’t have any content yet...',
+                  id: 'Settings.adminTokens.emptyStateLayout',
+                  defaultMessage: "You don't have any content yet...",
                 })}
               />
             ) : null}
@@ -221,7 +226,7 @@ export const ListView = () => {
 
 export const ProtectedListView = () => {
   const permissions = useTypedSelector(
-    (state) => state.admin_app.permissions.settings?.['api-tokens'].main
+    (state) => state.admin_app.permissions.settings?.['admin-tokens']?.main
   );
 
   return (

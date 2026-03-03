@@ -8,6 +8,7 @@ export default ({ strapi }: { strapi: Core.Strapi }) => {
 
   strapi.server.api('admin').use(passportMiddleware);
   strapi.get('auth').register('admin', adminAuthStrategy);
+  strapi.get('auth').register('admin', apiTokenAuthStrategy);
   strapi.get('auth').register('content-api', apiTokenAuthStrategy);
 
   const shouldServeAdminPanel = strapi.config.get('admin.serveAdminPanel');

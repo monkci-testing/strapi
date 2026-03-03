@@ -28,16 +28,14 @@ const extractToken = (ctx: Context) => {
  * Authenticate the validity of the token
  */
 export const authenticate = async (ctx: Context) => {
-  const apiTokenService = getService('api-token');
+  const apiTokenService = getService('api-token-admin');
   const token = extractToken(ctx);
 
   if (!token) {
     return { authenticated: false };
   }
 
-  const apiToken = await apiTokenService.getBy({
-    accessKey: apiTokenService.hash(token),
-  });
+  const apiToken = await apiTokenService.getByAccessKey(apiTokenService.hash(token));
 
   // token not found
   if (!apiToken) {
@@ -71,15 +69,51 @@ export const authenticate = async (ctx: Context) => {
     });
   }
 
-  if (apiToken.type === constants.API_TOKEN_TYPE.CUSTOM) {
-    const ability = await strapi.contentAPI.permissions.engine.generateAbility(
-      apiToken.permissions.map((action: any) => ({ action }))
-    );
+  const routeType = ctx.state.route?.info?.type;
 
-    return { authenticated: true, ability, credentials: apiToken };
+  if (apiToken.kind === 'content-api') {
+    if (routeType !== 'content-api') {
+      return { authenticated: false };
+    }
+
+    if (apiToken.type === constants.API_TOKEN_TYPE.CUSTOM) {
+      const ability = await strapi.contentAPI.permissions.engine.generateAbility(
+        apiToken.permissions.map((action: any) => ({ action }))
+      );
+
+      return { authenticated: true, ability, credentials: apiToken };
+    }
+
+    return { authenticated: true, credentials: apiToken };
   }
 
-  return { authenticated: true, credentials: apiToken };
+  if (apiToken.kind === 'admin') {
+    if (routeType !== 'admin') {
+      return { authenticated: false };
+    }
+
+    const owner = apiToken.adminUserOwner;
+
+    if (owner === null || owner === undefined || typeof owner !== 'object') {
+      return { authenticated: false, error: new UnauthorizedError('Token owner not found') };
+    }
+
+    if (owner.isActive !== true || owner.blocked === true) {
+      return { authenticated: false, error: new UnauthorizedError('Token owner is deactivated') };
+    }
+
+    const ability = await getService('permission').engine.generateTokenAbility(
+      apiToken.adminPermissions ?? [],
+      owner
+    );
+
+    ctx.state.userAbility = ability;
+    ctx.state.user = owner;
+
+    return { authenticated: true, credentials: apiToken, ability };
+  }
+
+  return { authenticated: false };
 };
 
 /**
@@ -102,6 +136,11 @@ export const verify = (auth: any, config: any) => {
     if (expirationDate < currentDate) {
       throw new UnauthorizedError('Token expired');
     }
+  }
+
+  // Admin tokens: authorization is handled by the isAuthenticatedAdmin + hasPermissions policies
+  if (apiToken.kind === 'admin') {
+    return;
   }
 
   // Full access

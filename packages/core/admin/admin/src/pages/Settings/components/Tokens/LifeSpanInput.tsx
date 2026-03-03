@@ -4,7 +4,8 @@ import { MessageDescriptor, useIntl } from 'react-intl';
 import { getDateOfExpiration } from '../../pages/ApiTokens/EditView/utils/getDateOfExpiration';
 import { isErrorMessageMessageDescriptor } from '../../utils/forms';
 
-import type { ApiToken } from '../../../../../../shared/contracts/api-token';
+import type { AdminApiToken } from '../../../../../../shared/contracts/admin-token';
+import type { ContentApiApiToken } from '../../../../../../shared/contracts/api-token';
 import type { TransferToken } from '../../../../../../shared/contracts/transfer';
 
 interface LifeSpanInputProps {
@@ -12,7 +13,7 @@ interface LifeSpanInputProps {
   value?: string | number | null;
   onChange: (event: { target: { name: string; value: string } }) => void;
   isCreating: boolean;
-  token: Partial<TransferToken> | Partial<ApiToken> | null;
+  token: Partial<TransferToken> | Partial<AdminApiToken> | Partial<ContentApiApiToken> | null;
 }
 
 export const LifeSpanInput = ({

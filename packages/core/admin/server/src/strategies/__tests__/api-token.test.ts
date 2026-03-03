@@ -12,8 +12,11 @@ describe('API Token Auth Strategy', () => {
       },
     };
 
+    const contentApiRouteState = { route: { info: { type: 'content-api' } } };
+
     const apiToken = {
       id: 1,
+      kind: 'content-api',
       name: 'api-token_tests-name',
       description: 'api-token_tests-description',
       type: 'read-only',
@@ -22,15 +25,15 @@ describe('API Token Auth Strategy', () => {
     const hash = jest.fn(() => 'api-token_tests-hashed-access-key');
 
     test('Authenticates a valid hashed access key', async () => {
-      const getBy = jest.fn(() => apiToken);
+      const getByAccessKey = jest.fn(() => apiToken);
       const update = jest.fn(() => apiToken);
-      const ctx = createContext({}, { request });
+      const ctx = createContext({}, { request, state: contentApiRouteState });
 
       global.strapi = {
         admin: {
           services: {
-            'api-token': {
-              getBy,
+            'api-token-admin': {
+              getByAccessKey,
               hash,
             },
           },
@@ -44,25 +47,25 @@ describe('API Token Auth Strategy', () => {
 
       const response = await apiTokenStrategy.authenticate(ctx);
 
-      expect(getBy).toHaveBeenCalledWith({ accessKey: 'api-token_tests-hashed-access-key' });
+      expect(getByAccessKey).toHaveBeenCalledWith('api-token_tests-hashed-access-key');
 
       expect(response).toStrictEqual({ authenticated: true, credentials: apiToken });
     });
 
     test('Updates lastUsedAt if the token has not been used in the last hour', async () => {
       // Mock lastUsedAt to be less than an hour ago
-      const getBy = jest.fn(() => ({
+      const getByAccessKey = jest.fn(() => ({
         ...apiToken,
         lastUsedAt: new Date(Date.now() - 3600000).toISOString(),
       }));
       const update = jest.fn(() => apiToken);
-      const ctx = createContext({}, { request });
+      const ctx = createContext({}, { request, state: contentApiRouteState });
 
       global.strapi = {
         admin: {
           services: {
-            'api-token': {
-              getBy,
+            'api-token-admin': {
+              getByAccessKey,
               hash,
             },
           },
@@ -84,18 +87,18 @@ describe('API Token Auth Strategy', () => {
 
     test('Does not update lastUsedAt if the token has been used in the last hour', async () => {
       // Mock lastUsedAt to be less than an hour ago
-      const getBy = jest.fn(() => ({
+      const getByAccessKey = jest.fn(() => ({
         ...apiToken,
         lastUsedAt: new Date().toISOString(),
       }));
       const update = jest.fn(() => apiToken);
-      const ctx = createContext({}, { request });
+      const ctx = createContext({}, { request, state: contentApiRouteState });
 
       global.strapi = {
         admin: {
           services: {
-            'api-token': {
-              getBy,
+            'api-token-admin': {
+              getByAccessKey,
               hash,
             },
           },
@@ -128,7 +131,7 @@ describe('API Token Auth Strategy', () => {
     });
 
     test('Fails to authenticate an invalid bearer token', async () => {
-      const getBy = jest.fn(() => null);
+      const getByAccessKey = jest.fn(() => null);
       const ctx = createContext(
         {},
         { request: { header: { authorization: 'bearer invalid-header' } } }
@@ -137,8 +140,8 @@ describe('API Token Auth Strategy', () => {
       global.strapi = {
         admin: {
           services: {
-            'api-token': {
-              getBy,
+            'api-token-admin': {
+              getByAccessKey,
               hash,
             },
           },
@@ -147,27 +150,27 @@ describe('API Token Auth Strategy', () => {
 
       const response = await apiTokenStrategy.authenticate(ctx);
 
-      expect(getBy).toHaveBeenCalledWith({ accessKey: 'api-token_tests-hashed-access-key' });
+      expect(getByAccessKey).toHaveBeenCalledWith('api-token_tests-hashed-access-key');
       expect(response).toStrictEqual({ authenticated: false });
     });
 
     test('Expired token throws on authorize', async () => {
       const pastDate = new Date(Date.now() - 1).toISOString();
 
-      const getBy = jest.fn(() => {
+      const getByAccessKey = jest.fn(() => {
         return {
           ...apiToken,
           expiresAt: pastDate,
         };
       });
       const update = jest.fn(() => apiToken);
-      const ctx = createContext({}, { request });
+      const ctx = createContext({}, { request, state: contentApiRouteState });
 
       global.strapi = {
         admin: {
           services: {
-            'api-token': {
-              getBy,
+            'api-token-admin': {
+              getByAccessKey,
               hash,
               update,
             },
@@ -181,7 +184,180 @@ describe('API Token Auth Strategy', () => {
       expect(error).toBeInstanceOf(errors.UnauthorizedError);
       expect(error.message).toBe('Token expired');
 
-      expect(getBy).toHaveBeenCalledWith({ accessKey: 'api-token_tests-hashed-access-key' });
+      expect(getByAccessKey).toHaveBeenCalledWith('api-token_tests-hashed-access-key');
+    });
+  });
+
+  describe('Admin token owner status checks', () => {
+    const activeOwner = {
+      id: 42,
+      isActive: true,
+      blocked: false,
+    };
+
+    const adminTokenBase = {
+      id: 2,
+      kind: 'admin',
+      name: 'admin-token-test',
+      description: '',
+      adminPermissions: [],
+    };
+
+    const update = jest.fn();
+    const hash = jest.fn(() => 'api-token_tests-hashed-access-key');
+    const generateTokenAbility = jest.fn(() => Promise.resolve({ can: jest.fn() }));
+
+    const makeStrapi = (getByAccessKey: jest.Mock) => ({
+      admin: {
+        services: {
+          'api-token-admin': { getByAccessKey, hash },
+          permission: { engine: { generateTokenAbility } },
+        },
+      },
+      db: {
+        query() {
+          return { update };
+        },
+      },
+    });
+
+    const adminRouteCtx = (authorization = 'Bearer test-token') =>
+      createContext(
+        {},
+        {
+          request: { header: { authorization } },
+          state: { route: { info: { type: 'admin' } } },
+        }
+      );
+
+    test('Authenticates an admin token when owner is active and not blocked', async () => {
+      const token = { ...adminTokenBase, adminUserOwner: activeOwner };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = adminRouteCtx();
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const response = (await apiTokenStrategy.authenticate(ctx)) as any;
+
+      expect(response.authenticated).toBe(true);
+      expect(response.credentials).toBe(token);
+      expect(response.ability).toBeDefined();
+      expect(ctx.state.userAbility).toBeDefined();
+      expect(ctx.state.user).toBe(activeOwner);
+    });
+
+    test('Fails to authenticate when owner isActive is false', async () => {
+      const token = { ...adminTokenBase, adminUserOwner: { ...activeOwner, isActive: false } };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = adminRouteCtx();
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const { authenticated, error } = (await apiTokenStrategy.authenticate(ctx)) as any;
+
+      expect(authenticated).toBe(false);
+      expect(error).toBeInstanceOf(errors.UnauthorizedError);
+      expect(error.message).toBe('Token owner is deactivated');
+    });
+
+    test('Fails to authenticate when owner is blocked', async () => {
+      const token = { ...adminTokenBase, adminUserOwner: { ...activeOwner, blocked: true } };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = adminRouteCtx();
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const { authenticated, error } = (await apiTokenStrategy.authenticate(ctx)) as any;
+
+      expect(authenticated).toBe(false);
+      expect(error).toBeInstanceOf(errors.UnauthorizedError);
+      expect(error.message).toBe('Token owner is deactivated');
+    });
+
+    test('Fails to authenticate when adminUserOwner is a bare ID (not populated)', async () => {
+      const token = { ...adminTokenBase, adminUserOwner: 42 };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = adminRouteCtx();
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const { authenticated, error } = (await apiTokenStrategy.authenticate(ctx)) as any;
+
+      expect(authenticated).toBe(false);
+      expect(error).toBeInstanceOf(errors.UnauthorizedError);
+      expect(error.message).toBe('Token owner not found');
+    });
+
+    test('Rejects an admin token on a content-api route', async () => {
+      const token = { ...adminTokenBase, adminUserOwner: activeOwner };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = createContext(
+        {},
+        {
+          request: { header: { authorization: 'Bearer test-token' } },
+          state: { route: { info: { type: 'content-api' } } },
+        }
+      );
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const response = await apiTokenStrategy.authenticate(ctx);
+
+      expect(response).toStrictEqual({ authenticated: false });
+    });
+  });
+
+  describe('Route-type separation', () => {
+    const hash = jest.fn(() => 'api-token_tests-hashed-access-key');
+    const update = jest.fn();
+
+    const makeStrapi = (getByAccessKey: jest.Mock) => ({
+      admin: {
+        services: {
+          'api-token-admin': { getByAccessKey, hash },
+        },
+      },
+      db: {
+        query() {
+          return { update };
+        },
+      },
+    });
+
+    test('Rejects a content-api token on an admin route', async () => {
+      const token = { id: 1, kind: 'content-api', type: 'read-only' };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = createContext(
+        {},
+        {
+          request: { header: { authorization: 'Bearer test-token' } },
+          state: { route: { info: { type: 'admin' } } },
+        }
+      );
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const response = await apiTokenStrategy.authenticate(ctx);
+
+      expect(response).toStrictEqual({ authenticated: false });
+    });
+
+    test('Rejects a content-api token when route type is absent', async () => {
+      const token = { id: 1, kind: 'content-api', type: 'read-only' };
+      const getByAccessKey = jest.fn(() => token);
+      const ctx = createContext(
+        {},
+        {
+          request: { header: { authorization: 'Bearer test-token' } },
+          state: { route: { info: {} } },
+        }
+      );
+
+      global.strapi = makeStrapi(getByAccessKey) as any;
+
+      const response = await apiTokenStrategy.authenticate(ctx);
+
+      expect(response).toStrictEqual({ authenticated: false });
     });
   });
 
@@ -227,6 +403,17 @@ describe('API Token Auth Strategy', () => {
         return false;
       }),
     };
+
+    test('Verify admin token — returns without throwing (policies handle authorization)', () => {
+      global.strapi = strapiMock as any;
+
+      expect(
+        apiTokenStrategy.verify(
+          { credentials: { id: 2, kind: 'admin' } },
+          { scope: ['admin::api-tokens.read'] }
+        )
+      ).toBeUndefined();
+    });
 
     test('Verify read-only access', () => {
       global.strapi = strapiMock as any;
